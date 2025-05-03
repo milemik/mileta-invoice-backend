@@ -1,0 +1,34 @@
+#IDE
+.idea
+.DS_Store
+
+# Binaries for programs and plugins
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, build output
+*.test
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Build artifacts
+bin/
+build/
+
+# Logs
+*.log
+
+# Coverage files
+*.cover
+*.cov
+
+# IDE specific
+.vscode/
+*.swp
