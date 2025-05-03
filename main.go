@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // Lets start simple. Lets create struct for work log
@@ -26,16 +31,74 @@ func updateResponseHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 }
 
-func main() {
-	// Lets add some hard cored data to be accessed by our API
-	workDays := []WorkDay{
-		WorkDay{WorkDate: time.Date(2025, time.Month(5), 2, 0, 0, 0, 0, time.UTC), Description: "Second work day", HourWorked: 10},
-		WorkDay{WorkDate: time.Date(2025, time.Month(5), 1, 0, 0, 0, 0, time.UTC), Description: "First work day", HourWorked: 9},
+
+func connectToMongoDB() *mongo.Client {
+	uri := "mongodb://localhost:27017"
+	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
+	opts := options.Client().ApplyURI(uri).SetServerAPIOptions(serverAPI)
+	// Create a new client and connect to the server
+	client, err := mongo.Connect(opts)
+	if err != nil {
+		log.Fatal(err)
 	}
+	// Send a ping to confirm a successful connection
+	var result bson.M
+	if err := client.Database("admin").RunCommand(context.TODO(), bson.D{{"ping", 1}}).Decode(&result); err != nil {
+		panic(err)
+	}
+	return client
+}
+
+func getWorkDaysCollection(client *mongo.Client) *mongo.Collection {
+	collection := client.Database("db").Collection("workdays")
+	return collection
+}
+
+
+func addWorkDay(client *mongo.Client, workDay WorkDay) interface{} {
+	coll := getWorkDaysCollection(client)
+	res, err := coll.InsertOne(context.TODO(), workDay)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return res.InsertedID
+}
+
+func getWorkDays(client *mongo.Client) []WorkDay {
+	coll := getWorkDaysCollection(client)
+	cursor, err := coll.Find(context.TODO(), bson.D{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cursor.Close(context.TODO())
+	var workDays []WorkDay
+	for cursor.Next(context.TODO()) {
+		var workDay WorkDay
+		if err := cursor.Decode(&workDay); err != nil {
+			log.Fatal(err)
+		}
+		workDays = append(workDays, workDay)
+	}
+	if err := cursor.Err(); err != nil {
+		log.Fatal(err)
+	}
+	return workDays
+}
+
+
+
+func main() {
+	mongoClient := connectToMongoDB()
+	defer func() {
+		if err := mongoClient.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
 	
 
 	http.HandleFunc("/api/work/list/", func(w http.ResponseWriter, r *http.Request) {
 		updateResponseHeaders(w, r)
+		workDays := getWorkDays(mongoClient)
 		data, err := json.Marshal(workDays)
 		if err != nil {
 			log.Fatal(err)
@@ -63,7 +126,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		workDays = append(workDays, workDay)
+		addWorkDay(mongoClient, workDay)
 		updateResponseHeaders(w, r)
 		io.Writer.Write(w, requestBody)
 	})

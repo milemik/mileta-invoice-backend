@@ -32,3 +32,6 @@ build/
 # IDE specific
 .vscode/
 *.swp
+
+# DB
+.data
